@@ -5,6 +5,10 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+const CONTEXT_PROGRESS_WIDTH: usize = 10;
+const CONTEXT_PROGRESS_FILLED: char = '█';
+const CONTEXT_PROGRESS_EMPTY: char = '░';
+
 #[derive(Default)]
 pub struct ContextWindowSegment;
 
@@ -27,9 +31,10 @@ impl Segment for ContextWindowSegment {
 
         let context_used_token_opt = parse_transcript_usage(&input.transcript_path);
 
-        let (percentage_display, tokens_display) = match context_used_token_opt {
+        let (progress_bar, percentage_display, tokens_display) = match context_used_token_opt {
             Some(context_used_token) => {
                 let context_used_rate = (context_used_token as f64 / context_limit as f64) * 100.0;
+                let progress_bar = format_context_progress_bar(Some(context_used_rate));
 
                 let percentage = if context_used_rate.fract() == 0.0 {
                     format!("{:.0}%", context_used_rate)
@@ -48,11 +53,15 @@ impl Segment for ContextWindowSegment {
                     context_used_token.to_string()
                 };
 
-                (percentage, tokens)
+                (progress_bar, percentage, tokens)
             }
             None => {
                 // No usage data available
-                ("-".to_string(), "-".to_string())
+                (
+                    format_context_progress_bar(None),
+                    "-".to_string(),
+                    "-".to_string(),
+                )
             }
         };
 
@@ -72,7 +81,10 @@ impl Segment for ContextWindowSegment {
         metadata.insert("model".to_string(), input.model.id.clone());
 
         Some(SegmentData {
-            primary: format!("{} · {} tokens", percentage_display, tokens_display),
+            primary: format!(
+                "{} {} · {} tokens",
+                progress_bar, percentage_display, tokens_display
+            ),
             secondary: String::new(),
             metadata,
         })
@@ -81,6 +93,22 @@ impl Segment for ContextWindowSegment {
     fn id(&self) -> SegmentId {
         SegmentId::ContextWindow
     }
+}
+
+fn format_context_progress_bar(percentage: Option<f64>) -> String {
+    let filled = percentage
+        .map(|value| {
+            ((value.clamp(0.0, 100.0) / 100.0) * CONTEXT_PROGRESS_WIDTH as f64).round() as usize
+        })
+        .unwrap_or(0)
+        .min(CONTEXT_PROGRESS_WIDTH);
+
+    let empty = CONTEXT_PROGRESS_WIDTH - filled;
+    format!(
+        "[{}{}]",
+        CONTEXT_PROGRESS_FILLED.to_string().repeat(filled),
+        CONTEXT_PROGRESS_EMPTY.to_string().repeat(empty)
+    )
 }
 
 fn parse_transcript_usage<P: AsRef<Path>>(transcript_path: P) -> Option<u32> {
@@ -99,6 +127,26 @@ fn parse_transcript_usage<P: AsRef<Path>>(transcript_path: P) -> Option<u32> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_context_progress_bar;
+
+    #[test]
+    fn formats_context_progress_bar_with_ten_steps() {
+        assert_eq!(format_context_progress_bar(Some(0.0)), "[░░░░░░░░░░]");
+        assert_eq!(format_context_progress_bar(Some(50.0)), "[█████░░░░░]");
+        assert_eq!(format_context_progress_bar(Some(78.2)), "[████████░░]");
+        assert_eq!(format_context_progress_bar(Some(100.0)), "[██████████]");
+    }
+
+    #[test]
+    fn clamps_context_progress_bar_to_supported_range() {
+        assert_eq!(format_context_progress_bar(Some(-10.0)), "[░░░░░░░░░░]");
+        assert_eq!(format_context_progress_bar(Some(140.0)), "[██████████]");
+        assert_eq!(format_context_progress_bar(None), "[░░░░░░░░░░]");
+    }
 }
 
 fn try_parse_transcript_file(path: &Path) -> Option<u32> {

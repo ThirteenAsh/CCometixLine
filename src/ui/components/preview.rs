@@ -126,8 +126,8 @@ impl PreviewComponent {
                     },
                 },
                 SegmentId::ContextWindow => SegmentData {
-                    primary: "78.2%".to_string(),
-                    secondary: "· 156.4k".to_string(),
+                    primary: "[████████░░] 78.2% · 156.4k tokens".to_string(),
+                    secondary: "".to_string(),
                     metadata: {
                         let mut map = HashMap::new();
                         map.insert("total_tokens".to_string(), "156400".to_string());
